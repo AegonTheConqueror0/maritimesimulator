@@ -1,0 +1,6 @@
+{
+  "name": "Three-System Maritime Simulator",
+  "description": "An interactive classroom simulator featuring Bridge Operations, Engine Room, and Commercial/Admin stations with inter-system communication and random emergency drills.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
