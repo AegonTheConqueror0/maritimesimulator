@@ -35,6 +35,28 @@ const INITIAL_WAYPOINTS: Waypoint[] = [
   { id: 'wp-6', name: 'HAMILTON TERMINAL', lat: 32.3000, lng: -64.7500, reached: false },
 ];
 
+const LOCAL_STATE_KEY = 'maritime-sim-state-v1';
+
+function loadLocalState() {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(LOCAL_STATE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (err) {
+    console.warn('Unable to load local simulation state:', err);
+    return null;
+  }
+}
+
+function saveLocalState(state: Record<string, any>) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(LOCAL_STATE_KEY, JSON.stringify(state));
+  } catch (err) {
+    console.warn('Unable to save local simulation state:', err);
+  }
+}
+
 // Web Audio API Sound Synthesizer for Authentic Marine Shipboard Alarms
 function playAlarmSound(type: 'critical' | 'warn' | 'acknowledge' | 'radar_beep') {
   try {
@@ -215,20 +237,60 @@ export default function App() {
 
   // Firestore sync action helper
   const syncToFirestore = useCallback(async (partialState: Record<string, any>) => {
+    const fullState = {
+      voyageStarted,
+      currentWaypointIndex,
+      vesselPercentAlongLeg,
+      shipSpeed,
+      autoDrillsEnabled,
+      trainingMode,
+      activeAlarms,
+      messages,
+      cargoItems,
+      waypoints,
+      weather,
+      engine,
+      engineChecklist,
+      ...partialState
+    };
+
+    saveLocalState(fullState);
+
     try {
       const docRef = doc(db, 'sessions', roomId);
       await updateDoc(docRef, partialState);
     } catch (e) {
+      console.warn('Firestore update failed, saving locally and retrying with merge.', e);
       try {
         const docRef = doc(db, 'sessions', roomId);
         await setDoc(docRef, partialState, { merge: true });
       } catch (err) {
         console.error("Firestore sync error:", err);
+        setSyncStatus('offline');
       }
     }
-  }, [roomId]);
+  }, [roomId, voyageStarted, currentWaypointIndex, vesselPercentAlongLeg, shipSpeed, autoDrillsEnabled, trainingMode, activeAlarms, messages, cargoItems, waypoints, weather, engine, engineChecklist]);
 
   // Firestore Snapshot listening session
+  useEffect(() => {
+    const localState = loadLocalState();
+    if (localState) {
+      if (localState.voyageStarted !== undefined) setVoyageStarted(localState.voyageStarted);
+      if (localState.currentWaypointIndex !== undefined) setCurrentWaypointIndex(localState.currentWaypointIndex);
+      if (localState.vesselPercentAlongLeg !== undefined) setVesselPercentAlongLeg(localState.vesselPercentAlongLeg);
+      if (localState.shipSpeed !== undefined) setShipSpeed(localState.shipSpeed);
+      if (localState.autoDrillsEnabled !== undefined) setAutoDrillsEnabled(localState.autoDrillsEnabled);
+      if (localState.trainingMode !== undefined) setTrainingMode(localState.trainingMode);
+      if (localState.activeAlarms !== undefined) setActiveAlarms(localState.activeAlarms);
+      if (localState.messages !== undefined) setMessages(localState.messages);
+      if (localState.cargoItems !== undefined) setCargoItems(localState.cargoItems);
+      if (localState.waypoints !== undefined) setWaypoints(localState.waypoints);
+      if (localState.weather !== undefined) setWeather(localState.weather);
+      if (localState.engine !== undefined) setEngine(localState.engine);
+      if (localState.engineChecklist !== undefined) setEngineChecklist(localState.engineChecklist);
+    }
+  }, []);
+
   useEffect(() => {
     const docRef = doc(db, 'sessions', roomId);
     setSyncStatus('syncing');
@@ -249,6 +311,7 @@ export default function App() {
         if (d.weather !== undefined) setWeather(d.weather);
         if (d.engine !== undefined) setEngine(d.engine);
         if (d.engineChecklist !== undefined) setEngineChecklist(d.engineChecklist);
+        saveLocalState(d as Record<string, any>);
         setSyncStatus('synced');
       } else {
         const initialSetup = {
@@ -297,7 +360,12 @@ export default function App() {
             { id: 'chk-gens', text: 'Synchronize Generator #2 on Main Board', checked: false },
           ]
         };
-        setDoc(docRef, initialSetup).then(() => {
+
+        const localState = loadLocalState();
+        const startupState = localState ? { ...initialSetup, ...localState } : initialSetup;
+        saveLocalState(startupState);
+
+        setDoc(docRef, startupState).then(() => {
           setSyncStatus('synced');
         }).catch(err => {
           console.error("Firebase init doc error:", err);
@@ -307,6 +375,9 @@ export default function App() {
     }, (error) => {
       console.error("Firestore listener error:", error);
       setSyncStatus('offline');
+      if (error && typeof error.code === 'string' && error.code === 'unavailable') {
+        console.warn('Firestore appears to be unavailable. Please verify network/firewall and Firebase project availability.');
+      }
     });
 
     return () => unsubscribe();

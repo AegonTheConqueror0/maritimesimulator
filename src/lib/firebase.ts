@@ -1,19 +1,34 @@
 import { initializeApp } from 'firebase/app';
-import { getFirestore } from 'firebase/firestore';
+import { initializeFirestore, enableIndexedDbPersistence } from 'firebase/firestore';
 
 const firebaseConfig = {
   projectId: "gen-lang-client-0020061709",
   appId: "1:1041639125659:web:07be23086b884b36aa4c3e",
   apiKey: "AIzaSyCGyrFE1DhOeAQBLKWIJnnMcL7dabNcs0I",
   authDomain: "gen-lang-client-0020061709.firebaseapp.com",
-  firestoreDatabaseId: "ai-studio-e02002d7-f9c1-4bef-be68-b06d2b07e14f",
-  storageBucket: "gen-lang-client-0020061709.firebasestorage.app",
+  storageBucket: "gen-lang-client-0020061709.appspot.com",
   messagingSenderId: "1041639125659"
 };
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Cloud Firestore and get a reference to the service
-export const db = getFirestore(app);
+// Initialize Cloud Firestore with better browser compatibility
+export const db = initializeFirestore(app, {
+  ignoreUndefinedProperties: true,
+  experimentalForceLongPolling: true
+});
+
+if (typeof window !== 'undefined') {
+  enableIndexedDbPersistence(db).catch((err) => {
+    if (err.code === 'failed-precondition') {
+      console.warn('Firestore persistence failed: multiple tabs open.', err);
+    } else if (err.code === 'unimplemented') {
+      console.warn('Firestore persistence is not supported by this browser.', err);
+    } else {
+      console.warn('Firestore persistence error:', err);
+    }
+  });
+}
+
 export default app;
